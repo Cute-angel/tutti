@@ -35,6 +35,7 @@ type daemonCLIRegistryInput struct {
 	ManagedCredentials   *managedcredentialsservice.Service
 	AgentSessions        *agentservice.Service
 	AgentTargets         agenttargetservice.Service
+	WorkspaceAgents      agentcontextcli.WorkspaceAgentDirectory
 	AgentTargetSetup     *agentextensionservice.SetupService
 	Preferences          *preferencesservice.Service
 	TuttiModePlans       *tuttimodeplanservice.Service
@@ -68,7 +69,7 @@ func buildDaemonCLIRegistry(
 			},
 			input.AgentTargets,
 			input.Preferences,
-		).WithAgentTargetSetup(input.AgentTargetSetup),
+		).WithAgentTargetSetup(input.AgentTargetSetup).WithWorkspaceAgents(input.WorkspaceAgents),
 		tuttimodeplancli.NewProviderWithExecutionSnapshot(
 			input.Workspaces,
 			input.TuttiModePlans,

@@ -130,7 +130,7 @@ func legacyProviderCatalogItems(items []agentCatalogItem) []legacyProviderItem {
 	grouped := map[string][]agentCatalogItem{}
 	order := []string{}
 	for _, item := range items {
-		provider := item.Target.Provider
+		provider := item.Provider
 		if _, ok := grouped[provider]; !ok {
 			order = append(order, provider)
 		}
@@ -139,9 +139,9 @@ func legacyProviderCatalogItems(items []agentCatalogItem) []legacyProviderItem {
 	result := make([]legacyProviderItem, 0, len(order))
 	for _, provider := range order {
 		matches := grouped[provider]
-		item := legacyProviderItem{ProviderID: provider, DisplayName: matches[0].Target.Name}
+		item := legacyProviderItem{ProviderID: provider, DisplayName: matches[0].Name}
 		if len(matches) == 1 {
-			item.AgentTargetID = matches[0].Target.ID
+			item.AgentTargetID = matches[0].ID
 			item.Availability = matches[0].Availability
 		} else {
 			item.Availability = agentservice.ProviderAvailability{
@@ -217,18 +217,18 @@ func normalizeLegacyProvider(provider string) string {
 	return agentproviderbiz.NormalizeOpen(provider)
 }
 
-func (p Provider) resolveAgentSelector(ctx context.Context, agentID string, provider string) (agenttargetbiz.Target, bool, error) {
+func (p Provider) resolveAgentSelector(ctx context.Context, workspaceID string, agentID string, provider string) (agentSelection, bool, error) {
 	agentID = strings.TrimSpace(agentID)
 	provider = strings.TrimSpace(provider)
 	if (agentID == "") == (provider == "") {
-		return agenttargetbiz.Target{}, false, fmt.Errorf("%w: provide exactly one of --agent-id or deprecated --provider; run agent list --json", cliservice.ErrInvalidInput)
+		return agentSelection{}, false, fmt.Errorf("%w: provide exactly one of --agent-id or deprecated --provider; run agent list --json", cliservice.ErrInvalidInput)
 	}
 	if agentID != "" {
-		target, err := p.resolveEnabledAgentTarget(ctx, agentID)
+		target, err := p.resolveAgent(ctx, workspaceID, agentID)
 		return target, false, err
 	}
 	target, err := p.resolveLegacyProviderTarget(ctx, provider)
-	return target, true, err
+	return globalAgentSelection(target), true, err
 }
 
 func (p Provider) resolveLegacyProviderTarget(ctx context.Context, provider string) (agenttargetbiz.Target, error) {
@@ -298,7 +298,7 @@ func (p Provider) newLegacyStartCommand(name string, targetID string) cliservice
 			if err != nil {
 				return nil, err
 			}
-			return p.runStart(ctx, invoke, target, startFields{
+			return p.runStart(ctx, invoke, globalAgentSelection(target), startFields{
 				Cwd: input.Cwd, DisplayPrompt: input.DisplayPrompt, Hidden: input.Hidden, Images: input.Images,
 				Model: input.Model, PermissionMode: input.PermissionMode, Prompt: input.Prompt,
 				ReasoningEffort: input.ReasoningEffort, Show: input.Show, Speed: input.Speed, Title: input.Title,
