@@ -60,6 +60,27 @@ compatibility, but a new `workspace-agent:*` value identifies a
 daemon. AgentGUI must never infer provider identity or launch authority from
 the opaque id.
 
+### CLI Agent Discovery
+
+`agent list` combines enabled global Harness targets with WorkspaceAgents from
+the invocation's workspace context. Without workspace context it returns only
+global targets; it never searches other workspaces or selects a startup workspace
+for custom-Agent discovery. The existing global default Agent selection and
+deprecated `--provider` resolution remain Harness-only.
+
+CLI catalog entries keep the selected Agent ID/name separate from the real
+Harness target. Multiple WorkspaceAgents may share one provider and Harness
+without collapsing into one entry. Extension setup probes use the Harness ID.
+Missing/disabled Harnesses and invalid model routes remain listable as unavailable
+with redacted configuration reasons; storage failures propagate as errors.
+
+`agent list --agent-id`, `composer-options`, `start`, and `skill-bundle` support
+the original `workspace-agent:*` identity within its owning workspace. The latter
+three resolve through the WorkspaceAgent service and pass the original ID to the
+Agent Service, which remains authoritative for execution-time configuration.
+The CLI projection never serializes resolved model-plan credentials or Agent
+instructions. WorkspaceAgents are not inserted into the global Harness catalog.
+
 ## Workspace Agent Lifecycle
 
 Workspace settings create, edit, list, and delete Agents through

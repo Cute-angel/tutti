@@ -4,6 +4,25 @@
 
 Provider discovery, installation, authentication, models, configuration, and runtime reachability.
 
+### Custom Agents are visible in Settings but missing from the CLI
+
+- Symptom: `agent list` omits a Custom Agent, or an exact `workspace-agent:*`
+  selector reports that the Agent was not found before composer/session handling.
+- Quick checks: verify the invocation has the owning workspace context, then
+  compare `agent list --json` and `agent list --agent-id <id> --json` in that
+  context. No workspace context intentionally produces a global-only directory.
+- Root cause: CLI discovery and selector validation can independently query only
+  the global Harness catalog, even though Agent Service supports WorkspaceAgents.
+- Fix: keep global/legacy provider lookup separate, merge workspace-scoped Agent
+  entries for discovery, and resolve exact workspace IDs through WorkspaceAgent
+  service. Preserve the original Agent ID downstream; use the Harness ID only for
+  runtime/setup metadata.
+- Validation: exercise both list filtering and composer/start/skill-bundle command
+  handlers, cross-workspace rejection, same-provider role preservation, and
+  unavailable Harness output. `TestWorkspaceAgentDirectory` scenarios in the CLI
+  agentcontext package protect these paths.
+- Reference: [CLI Agent Discovery](../../architecture/workspace-agents-and-automation.md#cli-agent-discovery).
+
 ### Tutti Agent browser login succeeds but the desktop remains on the login screen
 
 - Symptom:

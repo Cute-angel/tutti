@@ -15,6 +15,7 @@ recur and the repository now has implementation or debugging evidence for it.
 Use the focused runtime index or open one area directly:
 
 - [Agent Providers And Setup](./agent-provider-setup.md): Provider discovery, installation, authentication, models, configuration, and runtime reachability.
+  Includes Custom Agents visible in Settings but missing from the CLI directory.
   Includes Codex Model Plan Responses-to-Chat routing, oversized request
   metadata compatibility, and extension command/Skill palette hydration
   failures.
