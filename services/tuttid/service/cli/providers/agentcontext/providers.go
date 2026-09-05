@@ -75,53 +75,91 @@ func (p Provider) newAgentsCommand() cliservice.Command {
 	})
 }
 
+func (p Provider) runAgentsWithID(ctx context.Context, invoke framework.InvokeContext, input agentsInput, agentID string) (any, error) {
+	enabledTargets, err := p.enabledAgentTargets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	workspaceItems, err := p.workspaceAgentCatalog(ctx, invoke.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+
+	var requestedItem *agentCatalogItem
+	for index := range enabledTargets {
+		if agentID == enabledTargets[index].ID {
+			item := agentCatalogItem{agentSelection: globalAgentSelection(enabledTargets[index])}
+			requestedItem = &item
+			break
+		}
+	}
+	for index := range workspaceItems {
+		if agentID == workspaceItems[index].ID {
+			requestedItem = &workspaceItems[index]
+			break
+		}
+	}
+	if requestedItem == nil {
+		return nil, fmt.Errorf("%w: enabled agent %q was not found; run agent list --json", cliservice.ErrInvalidInput, agentID)
+	}
+
+	preferredProvider := p.preferredAgentProvider(ctx)
+	defaultAgentTargetID := preferredAgentTargetID(enabledTargets, preferredProvider)
+	target := requestedItem.HarnessTarget
+	availability := []agentservice.ProviderAvailability{}
+
+	if target.ID != "" {
+		if isExtensionAgentTarget(target) {
+			requestedItem.Availability = extensionTargetAvailability(target)
+			items := []agentCatalogItem{*requestedItem}
+			p.applyExtensionSetupAvailability(ctx, invoke.WorkspaceID, items, input.Refresh)
+			requestedItem = &items[0]
+		} else {
+			availability, err = p.sessions.ListProviderAvailability(ctx, agentservice.ProviderAvailabilityInput{Provider: target.Provider})
+			if err != nil {
+				return nil, err
+			}
+			requestedItem.Availability = agentCatalogItems([]agenttargetbiz.Target{target}, availability)[0].Availability
+		}
+	}
+
+	items := agentCatalogItems(enabledTargets, availability)
+	if target.ID != "" && isExtensionAgentTarget(target) {
+		for index := range items {
+			if items[index].HarnessTarget.ID == target.ID {
+				items[index].Availability = requestedItem.Availability
+				break
+			}
+		}
+	}
+	if defaultAgentTargetID == "" {
+		defaultAgentTargetID = fallbackDefaultAgentTargetID(items, preferredProvider)
+	}
+
+	return agentsResult{DefaultAgentTargetID: defaultAgentTargetID, Items: []agentCatalogItem{*requestedItem}}, nil
+}
+
 func (p Provider) runAgents(ctx context.Context, invoke framework.InvokeContext, input agentsInput) (any, error) {
 	if err := p.requireSessions(); err != nil {
 		return nil, err
+	}
+	requestedAgentID := strings.TrimSpace(input.AgentID)
+	if requestedAgentID != "" {
+		return p.runAgentsWithID(ctx, invoke, input, requestedAgentID)
 	}
 	targets, err := p.enabledAgentTargets(ctx)
 	if err != nil {
 		return nil, err
 	}
-	// match `agent-id`
-	requestedAgentID := strings.TrimSpace(input.AgentID)
 	workspaceItems, err := p.workspaceAgentCatalog(ctx, invoke.WorkspaceID)
 	if err != nil {
 		return nil, err
 	}
-	var requestedTarget *agenttargetbiz.Target
-	if requestedAgentID != "" {
-		for index := range targets {
-			target := &targets[index]
-			if target.ID == requestedAgentID {
-				requestedTarget = target
-				break
-			}
-		}
-		for index := range workspaceItems {
-			if workspaceItems[index].ID == requestedAgentID {
-				requestedTarget = &workspaceItems[index].HarnessTarget
-				break
-			}
-		}
-		if requestedTarget == nil {
-			return nil, fmt.Errorf("%w: enabled agent %q was not found; run agent list --json", cliservice.ErrInvalidInput, requestedAgentID)
-		}
-	}
-	// `agent-id` matched or without agent-id
 
 	preferredProvider := p.preferredAgentProvider(ctx)
 	defaultAgentTargetID := preferredAgentTargetID(targets, preferredProvider)
 
-	// filter extensionTargets  and check agentId isExtension
 	extensionTargets := extensionAgentTargets(targets)
-	if requestedTarget != nil {
-		if isExtensionAgentTarget(*requestedTarget) {
-			extensionTargets = []agenttargetbiz.Target{*requestedTarget}
-		} else {
-			extensionTargets = nil
-		}
-	}
 	extensionItems := agentCatalogItems(extensionTargets, nil)
 
 	probeCtx, cancelProbes := context.WithCancel(ctx)
@@ -139,15 +177,8 @@ func (p Provider) runAgents(ctx context.Context, invoke framework.InvokeContext,
 	availability := []agentservice.ProviderAvailability{}
 	builtinTargets := builtinAgentTargets(targets)
 	needsAvailability := len(builtinTargets) > 0
-	if requestedTarget != nil {
-		needsAvailability = requestedTarget.ID != "" && !isExtensionAgentTarget(*requestedTarget)
-	}
 	if needsAvailability {
-		availabilityInput := agentservice.ProviderAvailabilityInput{}
-		if requestedTarget != nil && !isExtensionAgentTarget(*requestedTarget) {
-			availabilityInput.Provider = requestedTarget.Provider
-		}
-		availability, err = p.sessions.ListProviderAvailability(ctx, availabilityInput)
+		availability, err = p.sessions.ListProviderAvailability(ctx, agentservice.ProviderAvailabilityInput{})
 		if err != nil {
 			cancelProbes()
 			<-extensionAvailabilityDone
@@ -184,16 +215,6 @@ func (p Provider) runAgents(ctx context.Context, invoke framework.InvokeContext,
 		}
 	}
 	items = append(items, workspaceItems...)
-	if requestedAgentID != "" {
-		filtered := make([]agentCatalogItem, 0, 1)
-		for _, item := range items {
-			if item.ID == requestedAgentID {
-				filtered = append(filtered, item)
-				break
-			}
-		}
-		items = filtered
-	}
 	return agentsResult{DefaultAgentTargetID: defaultAgentTargetID, Items: items}, nil
 }
 
